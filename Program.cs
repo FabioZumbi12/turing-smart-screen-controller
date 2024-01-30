@@ -1,17 +1,13 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.IO;
-using System.Linq;
+using System.Security.Principal;
 using System.Windows.Forms;
 
-namespace Turing_Smart_Screen.Net
+namespace Turing_Smart_Screen_Controller
 {
     internal static class Program
     {
         static Form form;
-        static NotifyIcon notifyIcon1;
         /// <summary>
         ///  The main entry point for the application.
         /// </summary>
@@ -21,86 +17,55 @@ namespace Turing_Smart_Screen.Net
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            if (Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName).Length > 1)
+            if (!IsAdministrator())
             {
-                MessageBox.Show("Another instance of this app is already running!", "Turing Smart Screen Controller");
+                /*if (!Program.IsAdministrator())
+                {
+                    // Restart and run as admin
+                    var exeName = Process.GetCurrentProcess().MainModule.FileName;
+                    ProcessStartInfo startInfo = new ProcessStartInfo(exeName);
+                    startInfo.Verb = "runas";
+                    startInfo.Arguments = "restart";
+                    Process.Start(startInfo);
+                    Application.Exit();
+                }*/
+
+                /*MessageBox.Show("This app need to run as administrator!", "Turing Smart Screen Controller");
                 Application.Exit();
                 Application.ExitThread();
-                return;
+                return;*/
+            }
+
+            var procs = Process.GetProcessesByName(Process.GetCurrentProcess().ProcessName);
+            if (procs.Length > 1)
+            {
+                RunPy.Run(true);
+                foreach (var proc in procs)
+                {
+                    if (proc.Id != Process.GetCurrentProcess().Id)
+                        proc.Kill();
+                }
             }
 
             Application.ApplicationExit += Application_ApplicationExit;
-            form = new App();
-            notifyIcon1 = new NotifyIcon
-            {
-                Icon = new Icon("icon.ico"),
-                BalloonTipIcon = ToolTipIcon.Info,
-                BalloonTipText = "Turing Smart Screen Monitor is running.\nDouble click on icon to show!",
-                BalloonTipTitle = "Turing Smart Screen",
-                Text = "Turing Smart Screen Controller",
-                Visible = true
-            };
-            notifyIcon1.DoubleClick += NotifyIcon1_DoubleClick;
-                        
-            ExecuteCommand("main.py");
 
-            if (!args.Contains("show"))
-            {
-                notifyIcon1.ShowBalloonTip(5);
-                Application.Run();
-            }
-            else
-            {
-                if (form.IsDisposed)
-                {
-                    form = new App();
-                }
-                Application.Run(form);
-            }
+            form = new App();
+            TryIcon.InitTry(form);
+
+            Application.Run(form);
         }
 
         private static void Application_ApplicationExit(object sender, EventArgs e)
         {
-            var procs = Process.GetProcessesByName("py");
-            foreach (var procsInfo in procs)
-            {
-                procsInfo.Kill();
-            }
-            notifyIcon1.Visible = false;
+            RunPy.Run(true);
+            TryIcon.RemoveTry();
         }
 
-        private static void NotifyIcon1_DoubleClick(object sender, EventArgs e)
+        public static bool IsAdministrator()
         {
-            if (form.IsDisposed)
-            {
-                form = new App();
-            }
-            form.Show();
-        }
-
-        public static void ExecuteCommand(string command)
-        {
-            var procs = Process.GetProcessesByName("py");
-            foreach (var procsInfo in procs)
-            {
-                procsInfo.Kill();
-            }
-            try
-            {
-                var proc = new Process
-                {
-                    StartInfo = new ProcessStartInfo("py", "main.py")
-                    {
-                        RedirectStandardOutput = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-                proc.Start();
-            } catch (Exception ex)
-            {
-                MessageBox.Show("Error on start TSS:\n" + ex.Message, "Turing Smart Screen Controller");
-            }            
+            WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
     }
 }

@@ -1,27 +1,20 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Diagnostics;
-using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
-namespace Turing_Smart_Screen.Net
+namespace Turing_Smart_Screen_Controller
 {
     public partial class App : Form
     {
-        RegistryKey appPreg = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
         public App()
         {
             InitializeComponent();
-            Icon = new Icon("icon.ico");
+            timer.Tick += Timer_Tick;
 
-            if (appPreg.GetValue(Text) == null)
-            {
-                chkRun.Checked = false;
-            }
-            else
-            {
-                chkRun.Checked = true;
-            }
+            var task = ProcessStart("SCHTASKS /query /tn \"Turing Smart Screen Controller\"");
+            checkBox1.Checked = task.Length > 0;
+            checkBox1.CheckedChanged += checkBox1_CheckedChanged;
         }
 
         private void Form1_Resize(object sender, EventArgs e)
@@ -29,6 +22,7 @@ namespace Turing_Smart_Screen.Net
             if (WindowState == FormWindowState.Minimized)
             {
                 Hide();
+                TryIcon.ShowBaloon();
             }
         }
 
@@ -39,49 +33,145 @@ namespace Turing_Smart_Screen.Net
 
         private void button1_Click(object sender, EventArgs e)
         {
-            var procs = Process.GetProcessesByName("py");
-            foreach (var procsInfo in procs)
-            {
-                procsInfo.Kill();
-            }
-            try
-            {
-                var proc = new Process
-                {
-                    StartInfo = new ProcessStartInfo("py", "main.py")
-                    {
-                        RedirectStandardOutput = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    }
-                };
-                proc.Start();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Error on start TSS:\n" + ex.Message, "Turing Smart Screen Controller");
-            }
+            RunTimer();
         }
 
         private void button2_Click(object sender, EventArgs e)
         {
-            var procs = Process.GetProcessesByName("py");
-            foreach (var procsInfo in procs)
+            lblAlerts.Text = RunPy.Run(true);
+            timer.Stop();
+
+            btnPrereq.Enabled = true;
+            btnEditConfig.Enabled = true;
+            btnTheme.Enabled = true;
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            RunPy.StopPy();
+            btnStop.PerformClick();
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            lblAlerts.Text = RunPy.OpenConfig();
+        }
+
+        readonly Timer timer = new Timer();
+        private void App_Shown(object sender, EventArgs e)
+        {
+            RunTimer();
+        }
+
+        private void RunTimer()
+        {
+            timer.Stop();
+            lblAlerts.Text = "Running prereqs...";
+            lblAlerts.Text = RunPy.Run(false);
+            if (RunPy.Running())
             {
-                procsInfo.Kill();
+                time = 5;
+                timer.Interval = 1000;
+                timer.Start();
+
+                btnPrereq.Enabled = false;
+                btnEditConfig.Enabled = false;
+                btnTheme.Enabled = false;
+            } else
+            {
+                lblAlerts.Text = "Errors on running, check logs!";
+
+                btnPrereq.Enabled = true;
+                btnEditConfig.Enabled = true;
+                btnTheme.Enabled = true;
             }
         }
 
-        private void chkRun_CheckedChanged(object sender, EventArgs e)
+        int time = 5;
+        private void Timer_Tick(object sender, EventArgs e)
         {
-            if (chkRun.Checked)
+            if (time > 0)
             {
-                appPreg.SetValue(Text, Application.ExecutablePath);
+                lblAlerts.Text = "Minimizing in " + time + "...";
+                time--;
             }
             else
             {
-                appPreg.DeleteValue(Text, false);
+                if (!RunPy.Running())
+                {
+                    lblAlerts.Text = "Errors on running, check logs!";
+
+                    btnPrereq.Enabled = true;
+                    btnEditConfig.Enabled = true;
+                    btnTheme.Enabled = true;
+                } else
+                {
+                    lblAlerts.Text = "";
+
+                    Hide();
+                    TryIcon.ShowBaloon();
+                }
+                timer.Stop();
             }
+        }
+
+        private void button5_Click(object sender, EventArgs e)
+        {
+            RunPy.OpenLogs();
+        }
+
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+            if (checkBox1.Checked)
+            {
+                ProcessStart("SCHTASKS /create /sc ONLOGON /tn \"Turing Smart Screen Controller\" /tr %cd%\\" + AppDomain.CurrentDomain.FriendlyName + " /rl HIGHEST");
+                lblAlerts.Text = "Added on Task Scheduler";
+            } else
+            {
+                ProcessStart("SCHTASKS /delete /tn \"Turing Smart Screen Controller\" /f");
+                lblAlerts.Text = "Removed from Task Scheduler";
+            }
+        }
+
+        private string ProcessStart(string args)
+        {
+            try{
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo("cmd.exe", "/c " + args)
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true
+                    }
+                };
+                process.Start();
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+                return output;
+            }
+            catch { }
+            return "";
+        }
+
+        private void button6_Click(object sender, EventArgs e)
+        {
+            lblAlerts.Text = RunPy.OpenThemeEdit();
+        }
+
+        private void button7_Click(object sender, EventArgs e)
+        {
+            Cursor = Cursors.WaitCursor;
+            btnRestart.Enabled = false;
+            btnEditConfig.Enabled = false;
+            btnTheme.Enabled = false;
+
+            lblAlerts.Text = RunPy.RunPreReqs();
+
+            btnRestart.Enabled = true;
+            btnEditConfig.Enabled = true;
+            btnTheme.Enabled = true;
+            Cursor = Cursors.Default;
         }
     }
 }
